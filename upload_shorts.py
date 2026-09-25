@@ -57,42 +57,6 @@ def append_to_uploaded_file(drive_service, file_id, video_name, current_list):
     media = MediaIoBaseUpload(io.BytesIO(new_content.encode('utf-8')), mimetype='text/plain', resumable=True)
     drive_service.files().update(fileId=file_id, media_body=media).execute()
 
-# --- JSON Metadata ရှာဖွေဖတ်ရှုသည့် Function ---
-def get_metadata_for_video(drive_service, folder_id, video_name):
-    """ဗီဒီယိုနာမည်နဲ့ သက်ဆိုင်တဲ့ မူရင်း ID ကိုရှာပြီး ၎င်းနဲ့ကိုက်ညီတဲ့ metadata.json ကို Drive ထဲမှာ ရှာဖွေဖတ်ရှုသည်"""
-    # ဥပမာ - video_name က "1500.mp4" ဆိုရင် '1500' (သို့) နာမည်တူ JSON ကို ရှာမည်
-    base_name = os.path.splitext(video_name)[0]
-    
-    # ပုံစံ ၁။ metadata_{base_name}.json (သို့) {base_name}.json ဖိုင်များကို ရှာရန်
-    query = f"'{folder_id}' in parents and (name='metadata.json' or name='{base_name}.json' or name='metadata_{base_name}.json') and trashed=false"
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-    files = results.get('files', [])
-    
-    # အကယ်၍ သီးသန့် JSON မတွေ့ခဲ့လျှင် Folder ထဲရှိ metadata.json အားလုံးထဲက id နဲ့ ကိုက်တာကို ရှာမည်
-    if not files:
-        query_all = f"'{folder_id}' in parents and name contains 'json' and trashed=false"
-        results_all = drive_service.files().list(q=query_all, fields="files(id, name)").execute()
-        files = results_all.get('files', [])
-
-    for file in files:
-        try:
-            request = drive_service.files().get_media(fileId=file['id'])
-            content = request.execute()
-            data = json.loads(content.decode('utf-8'))
-            
-            # JSON ထဲမှာ List ဖြစ်နေတာလား ဒါမှမဟုတ် Single Object လား စစ်ဆေးခြင်း
-            if isinstance(data, list):
-                for item in data:
-                    if str(item.get('id')) == base_name or item.get('video_name') == video_name:
-                        return item
-            elif isinstance(data, dict):
-                if str(data.get('id')) == base_name or file['name'] == f"{base_name}.json":
-                    return data
-        except Exception:
-            continue
-            
-    return None
-
 # --- Main Logic ---
 def main():
     folder_id = os.environ.get('GDRIVE_FOLDER_ID')
@@ -140,18 +104,19 @@ def main():
         return
 
     # တစ်ကြိမ်လျှင် အများဆုံး ၅ ဖိုင်
-    videos_to_upload = pending_videos[:5]
+    videos_to_upload = pending_videos[:3]
     
-    schedule_slots = [ 
-        (8, 30),
-        (11, 30),
-        (14, 30),
-        (16, 30), 
-        (19, 30)   
+    schedule_slots = [  
+        (05, 00), 
+        (14, 00),
+        (16, 30)   
     ]
 
     mmt_tz = timezone(timedelta(hours=6, minutes=30))
     now_mmt = datetime.now(mmt_tz)
+    
+    # လက်ရှိရက်စွဲကို ဖော်ပြရန် (ဥပမာ - September 25, 2026 ပုံစံဖြင့်)
+    current_date_str = now_mmt.strftime('%B %d, %Y')
 
     for index, (file_num, item) in enumerate(videos_to_upload):
         video_id = item['id']
@@ -180,29 +145,17 @@ def main():
                 while not done:
                     status, done = downloader.next_chunk()
 
-            # Metadata JSON ဖိုင်မှ အချက်အလက်များကို ဆွဲထုတ်ရန်
-            meta = get_metadata_for_video(drive_service, folder_id, video_name)
-            
-            if meta:
-                video_title = meta.get('title', '#shorts #trending')
-                video_desc = meta.get('description', '#shorts')
-                video_tags = meta.get('video_tags', ['shorts', 'trending'])
-                print(f"✨ Metadata JSON အောင်မြင်စွာ တွေ့ရှိပြီး အသုံးပြုပါမည် - Title: {video_title[:30]}...")
-            else:
-                # JSON မတွေ့ပါက Default သုံးမည်
-                video_title = "#hsu #beautiful #foryou #dance #shorts #youtubeshorts #အကိတ်တလိုင်း #fypシ゚viral #TrendingMM"
-                video_desc = "#hsu #beautiful #2d3d #live #foryou #dance #shorts #youtubeshorts #အကိတ်တလိုင်း #fypシ゚viral #TrendingMM #fyp"
-                video_tags = ['hsu', 'myanmar tiktok', 'smart', 'shorts', 'trending']
-                print("⚠️ သက်ဆိုင်ရာ Metadata JSON မတွေ့ရှိရပါ၊ Default ပုံစံဖြင့် တင်ပါမည်။")
+            # Title မှာသာ လက်ရှိရက်စွဲကို ထည့်သွင်းမည် (Description နှင့် Tags လုံးဝမပါပါ)
+            video_title = f"{current_date_str}"
 
-            # ၃။ YouTube သို့ Upload တင်ခြင်း
+            print(f"✨ Title: {video_title}")
+
+            # ၃။ YouTube သို့ Upload တင်ခြင်း (Description နှင့် Tags ကို ဖြုတ်ထားသည်)
             print(f"YouTube တွင် Schedule သတ်မှတ်နေသည် - အချိန်: MMT {slot_time.strftime('%H:%M')} (UTC {publish_at_iso})")
             body = {
                 'snippet': {
                     'title': video_title,
-                    'description': video_desc,
-                    'categoryId': '24', # Entertainment
-                    'tags': video_tags
+                    'categoryId': '24' # Entertainment
                 },
                 'status': {
                     'privacyStatus': 'private',
