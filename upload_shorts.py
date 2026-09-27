@@ -104,12 +104,13 @@ def main():
         return
 
     # တစ်ကြိမ်လျှင် အများဆုံး ၅ ဖိုင်
-    videos_to_upload = pending_videos[:3]
+    videos_to_upload = pending_videos[:4]
     
     schedule_slots = [  
-        (5, 00), 
-        (14, 00),
-        (16, 30)   
+        (2, 32), 
+        (6, 34),
+        (11, 34),
+        (23, 38)   
     ]
 
     mmt_tz = timezone(timedelta(hours=6, minutes=30))
